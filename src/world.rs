@@ -7,8 +7,6 @@ use std::{
 
 use crate::SharedState;
 
-use super::{Entity, EntityHandle};
-
 pub struct World {
     ticks_per_second: u16,
     tick_instant: Instant,
@@ -85,7 +83,7 @@ impl World {
         }
     }
 
-    pub(super) fn add_component<T: 'static>(&mut self, component: T) -> Result<(), String> {
+    fn add_component<T: 'static>(&mut self, component: T) -> Result<(), String> {
         let components = self
             .components
             .get_mut(&TypeId::of::<T>())
@@ -116,5 +114,39 @@ impl World {
 
         let transmuted = unsafe { mem::transmute::<&Vec<u8>, &Vec<T>>(components) };
         Ok(transmuted.as_slice())
+    }
+}
+
+#[derive(Clone, Copy)]
+pub struct Entity(u64);
+
+impl Entity {
+    pub fn next(&self) -> Self {
+        Entity(self.0 + 1)
+    }
+}
+
+impl Default for Entity {
+    fn default() -> Self {
+        Entity(0)
+    }
+}
+
+pub struct EntityHandle<'a> {
+    world: &'a mut World,
+    entity: Entity,
+}
+
+impl<'a> EntityHandle<'a> {
+    pub fn entity(&self) -> Entity {
+        self.entity
+    }
+
+    pub fn add_component<T: 'static>(
+        &mut self,
+        component: T,
+    ) -> Result<&'a mut EntityHandle, String> {
+        self.world.add_component(component)?;
+        Ok(self)
     }
 }

@@ -8,9 +8,7 @@ use sdl2::{
     video::{FullscreenType, WindowContext},
 };
 
-use crate::SharedState;
-
-use super::{DrawData, WindowRequest};
+use crate::{DrawData, SharedState, WindowRequest};
 
 pub struct WindowSystem<'a> {
     canvas: WindowCanvas,

@@ -1,4 +1,4 @@
-use super::AudioRequest;
+use crate::AudioRequest;
 
 pub struct AudioSystem {}
 

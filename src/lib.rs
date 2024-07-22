@@ -1,14 +1,13 @@
-pub mod audio;
-pub mod event;
+mod audio;
+mod data;
+mod event;
 mod game;
-pub mod window;
-pub mod world;
+mod window;
+mod world;
 
+pub use audio::*;
+pub use data::*;
+pub use event::*;
 pub use game::*;
-
-#[macro_export]
-macro_rules! type_ids {
-    ($($t:ty),+) => {
-        &[$(TypeId::of::<$t>()),+]
-    };
-}
+pub use window::*;
+pub use world::*;

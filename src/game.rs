@@ -2,7 +2,10 @@ use std::{sync::Arc, thread};
 
 use sdl2::{render::WindowCanvas, Sdl};
 
-use crate::{audio::AudioSystem, event::EventSystem, window::WindowSystem, world::World, GameRequest, SharedState};
+use crate::{
+    audio::AudioSystem, event::EventSystem, window::WindowSystem, world::World, GameRequest,
+    SharedState,
+};
 
 pub struct Game {
     accelerated: bool,
@@ -122,4 +125,11 @@ impl Game {
         self.vsync = true;
         self
     }
+}
+
+#[macro_export]
+macro_rules! type_ids {
+    ($($t:ty),+) => {
+        &[$(TypeId::of::<$t>()),+]
+    };
 }

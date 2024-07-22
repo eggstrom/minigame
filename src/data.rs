@@ -1,3 +1,8 @@
+use sdl2::{
+    pixels::Color,
+    rect::{Point, Rect},
+};
+
 use std::{
     mem,
     sync::{
@@ -6,9 +11,7 @@ use std::{
     },
 };
 
-use crate::{event::EventData, window::DrawData};
-
-use super::request::GameRequest;
+use crate::event::EventData;
 
 pub struct SharedState {
     running: AtomicBool,
@@ -80,4 +83,85 @@ impl SharedState {
             Ok(None)
         }
     }
+}
+
+#[derive(Debug)]
+pub enum GameRequest {
+    AudioRequest(AudioRequest),
+    WindowRequest(WindowRequest),
+    WorldRequest(WorldRequest),
+    Stop,
+}
+
+impl From<AudioRequest> for GameRequest {
+    fn from(value: AudioRequest) -> Self {
+        GameRequest::AudioRequest(value)
+    }
+}
+
+impl From<WindowRequest> for GameRequest {
+    fn from(value: WindowRequest) -> Self {
+        GameRequest::WindowRequest(value)
+    }
+}
+
+impl From<WorldRequest> for GameRequest {
+    fn from(value: WorldRequest) -> Self {
+        GameRequest::WorldRequest(value)
+    }
+}
+
+#[derive(Debug)]
+pub enum AudioRequest {}
+
+#[derive(Debug)]
+pub enum WindowRequest {
+    DisableFullscreen,
+    EnableDesktopFullscreen,
+    EnableFullscreen,
+    // LoadTexture{id: String, path: String},
+    // LoadTextureBytes{id: String, bytes: Vec<u8>},
+    Resize(u32, u32),
+    SetBackgroundColor(Color),
+}
+
+#[derive(Debug)]
+pub enum WorldRequest {}
+
+#[derive(Debug)]
+pub enum DrawData {
+    Rectangle {
+        rect: Rect,
+        color: Color,
+    },
+    FilledRectangle {
+        rect: Rect,
+        color: Color,
+    },
+    Circle {
+        x: i16,
+        y: i16,
+        rad: i16,
+        color: Color,
+    },
+    FilledCircle {
+        x: i16,
+        y: i16,
+        rad: i16,
+        color: Color,
+    },
+    Texture {
+        id: String,
+        src: Option<Rect>,
+        dst: Option<Rect>,
+    },
+    TextureEx {
+        id: String,
+        src: Option<Rect>,
+        dst: Option<Rect>,
+        center: Option<Point>,
+        angle: f64,
+        flip_h: bool,
+        flip_v: bool,
+    },
 }

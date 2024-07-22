@@ -1,4 +1,4 @@
-use std::{collections::HashMap, rc::Rc, time::Instant};
+use std::{collections::HashMap, rc::Rc};
 
 use sdl2::{
     gfx::primitives::DrawRenderer,
@@ -31,7 +31,7 @@ impl<'a> WindowSystem<'a> {
     }
 
     pub fn update(&mut self, state: &SharedState) -> Result<(), String> {
-        let instant = Instant::now();
+        // let instant = Instant::now();
 
         if let Some(draw_data) = state.lock_draw_data()? {
             self.canvas.set_draw_color(self.background_color);
@@ -42,7 +42,7 @@ impl<'a> WindowSystem<'a> {
             }
         }
 
-        log::info!("Window update took {}us", instant.elapsed().as_micros());
+        // log::info!("Window update took {}us", instant.elapsed().as_micros());
 
         self.canvas.present();
         Ok(())

@@ -13,7 +13,7 @@ pub struct World {
     next_entity: Entity,
     entities: Vec<Entity>,
     components: HashMap<TypeId, Vec<u8>>,
-    component_lookup: HashMap<TypeId, Vec<Entity>>,
+    _component_lookup: HashMap<TypeId, Vec<Entity>>,
     systems: HashMap<TypeId, Vec<fn()>>,
 }
 
@@ -25,27 +25,27 @@ impl World {
             next_entity: Entity::default(),
             entities: vec![],
             components: HashMap::new(),
-            component_lookup: HashMap::new(),
+            _component_lookup: HashMap::new(),
             systems: HashMap::new(),
         }
     }
 
     pub fn update(&mut self, state: &SharedState) -> Result<(), String> {
-        let instant = Instant::now();
+        // let instant = Instant::now();
 
-        let mut draw_data = vec![];
-        let mut requests = vec![];
-
+        // let mut draw_data = vec![];
+        // let mut requests = vec![];
+        //
         // for entity in self.entities.iter_mut() {
         //     let (dd, req) = entity.update();
         //     dd.map(|mut dd| draw_data.append(&mut dd));
         //     req.map(|mut req| requests.append(&mut req));
         // }
+        //
+        // state.set_draw_data(draw_data)?;
+        // state.push_requests(&mut requests)?;
 
-        state.set_draw_data(draw_data)?;
-        state.push_requests(&mut requests)?;
-
-        log::info!("World update took {}us", instant.elapsed().as_micros());
+        // log::info!("World update took {}us", instant.elapsed().as_micros());
 
         self.await_next_tick();
         Ok(())

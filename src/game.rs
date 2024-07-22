@@ -54,8 +54,8 @@ impl Game {
             let mut world = World::new(20);
 
             while world_state.running() {
-                if let Err(e) = world.update(&world_state) {
-                    log::error!("{e}");
+                if let Err(_) = world.update(&world_state) {
+                    // log::error!("{e}");
                     world_state.stop();
                 }
             }

@@ -1,13 +1,20 @@
-use crate::AudioRequest;
+use crate::{AudioRequest, SharedState};
 
-pub struct AudioSystem {}
+pub struct AudioModule {}
 
-impl AudioSystem {
+impl AudioModule {
     pub fn new() -> Self {
-        AudioSystem {}
+        AudioModule {}
     }
 
-    pub fn handle_request(&mut self, request: &AudioRequest) -> Result<(), String> {
+    pub fn update(&mut self, state: &SharedState) -> Result<(), String> {
+        for request in state.take_audio_requests()? {
+            self.handle_request(&request)?;
+        }
+        Ok(())
+    }
+
+    fn handle_request(&mut self, request: &AudioRequest) -> Result<(), String> {
         let _ = request;
         Ok(())
     }

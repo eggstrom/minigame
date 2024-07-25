@@ -16,7 +16,8 @@ use crate::event::EventData;
 pub struct SharedState {
     running: AtomicBool,
     events: Mutex<Vec<EventData>>,
-    requests: Mutex<Vec<GameRequest>>,
+    audio_requests: Mutex<Vec<AudioRequest>>,
+    window_requests: Mutex<Vec<WindowRequest>>,
     draw_data: Mutex<Vec<DrawData>>,
     new_draw_data: AtomicBool,
 }
@@ -26,7 +27,8 @@ impl SharedState {
         SharedState {
             running: true.into(),
             events: vec![].into(),
-            requests: vec![].into(),
+            audio_requests: vec![].into(),
+            window_requests: vec![].into(),
             draw_data: vec![].into(),
             new_draw_data: true.into(),
         }
@@ -51,17 +53,31 @@ impl SharedState {
         ))
     }
 
-    pub fn push_requests(&self, requests: &mut Vec<GameRequest>) -> Result<(), String> {
-        self.requests
+    pub fn send_audio_request(&self, request: AudioRequest) -> Result<(), String> {
+        self.audio_requests
             .lock()
             .map_err(|e| e.to_string())?
-            .append(requests);
+            .push(request);
         Ok(())
     }
 
-    pub fn take_requests(&self) -> Result<Vec<GameRequest>, String> {
+    pub fn send_window_request(&self, request: WindowRequest) -> Result<(), String> {
+        self.window_requests
+            .lock()
+            .map_err(|e| e.to_string())?
+            .push(request);
+        Ok(())
+    }
+
+    pub fn take_audio_requests(&self) -> Result<Vec<AudioRequest>, String> {
         Ok(mem::take(
-            &mut *self.requests.lock().map_err(|e| e.to_string())?,
+            &mut *self.audio_requests.lock().map_err(|e| e.to_string())?,
+        ))
+    }
+
+    pub fn take_window_requests(&self) -> Result<Vec<WindowRequest>, String> {
+        Ok(mem::take(
+            &mut *self.window_requests.lock().map_err(|e| e.to_string())?,
         ))
     }
 
@@ -86,32 +102,6 @@ impl SharedState {
 }
 
 #[derive(Debug)]
-pub enum GameRequest {
-    AudioRequest(AudioRequest),
-    WindowRequest(WindowRequest),
-    WorldRequest(WorldRequest),
-    Stop,
-}
-
-impl From<AudioRequest> for GameRequest {
-    fn from(value: AudioRequest) -> Self {
-        GameRequest::AudioRequest(value)
-    }
-}
-
-impl From<WindowRequest> for GameRequest {
-    fn from(value: WindowRequest) -> Self {
-        GameRequest::WindowRequest(value)
-    }
-}
-
-impl From<WorldRequest> for GameRequest {
-    fn from(value: WorldRequest) -> Self {
-        GameRequest::WorldRequest(value)
-    }
-}
-
-#[derive(Debug)]
 pub enum AudioRequest {}
 
 #[derive(Debug)]
@@ -125,8 +115,21 @@ pub enum WindowRequest {
     SetBackgroundColor(Color),
 }
 
-#[derive(Debug)]
-pub enum WorldRequest {}
+pub trait GameRequest {
+    fn send(self, state: &SharedState) -> Result<(), String>;
+}
+
+impl GameRequest for AudioRequest {
+    fn send(self, state: &SharedState) -> Result<(), String> {
+        state.send_audio_request(self)
+    }
+}
+
+impl GameRequest for WindowRequest {
+    fn send(self, state: &SharedState) -> Result<(), String> {
+        state.send_window_request(self)
+    }
+}
 
 #[derive(Debug)]
 pub enum DrawData {

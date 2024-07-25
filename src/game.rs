@@ -3,19 +3,19 @@ use std::{sync::Arc, thread};
 use sdl2::{render::WindowCanvas, Sdl};
 
 use crate::{
-    audio::AudioSystem, event::EventSystem, window::WindowSystem, world::World, GameRequest,
-    SharedState,
+    audio::AudioModule, event::EventModule, window::WindowModule, GameHandle, SharedState,
+    WorldModule,
 };
 
 pub struct Game {
-    accelerated: bool,
-    size: Option<(u32, u32)>,
     title: Option<String>,
+    size: Option<(u32, u32)>,
+    accelerated: bool,
     vsync: bool,
 }
 
 macro_rules! uninitialized_fields {
-    ($obj:expr, $($field:ident),+) => {
+    ($obj:ident, $($field:ident),+) => {
         {
             let mut uninitialized = vec![];
             $(
@@ -31,52 +31,48 @@ macro_rules! uninitialized_fields {
 impl Game {
     pub fn new() -> Self {
         Game {
-            accelerated: false,
-            size: None,
             title: None,
+            size: None,
+            accelerated: false,
             vsync: false,
         }
     }
 
-    pub fn start(&mut self) -> Result<(), String> {
+    pub fn start(&mut self, init: fn(&mut GameHandle)) -> Result<(), String> {
         self.validate()?;
         let sdl = sdl2::init()?;
         let canvas = self.make_canvas(&sdl)?;
         let texture_creator = canvas.texture_creator();
 
-        let mut event_system = EventSystem::new(sdl.event_pump()?);
-        let mut window_system = WindowSystem::new(canvas, &texture_creator)?;
-        let mut audio_system = AudioSystem::new();
+        let mut event_module = EventModule::new(sdl.event_pump()?);
+        let mut window_module = WindowModule::new(canvas, &texture_creator)?;
+        let mut audio_module = AudioModule::new();
         let state = Arc::new(SharedState::new());
 
-        let world_state = Arc::clone(&state);
-        let world_thread = thread::spawn(move || {
-            let mut world = World::new(20);
+        let state2 = Arc::clone(&state);
 
-            while world_state.running() {
-                if let Err(_) = world.update(&world_state) {
-                    // log::error!("{e}");
-                    world_state.stop();
-                }
+        let world_thread = thread::spawn(move || -> Result<(), String> {
+            let mut world = WorldModule::new(20);
+            world.start(Arc::clone(&state2), init);
+
+            while state2.running() {
+                world.update(Arc::clone(&state2)).map_err(|e| {
+                    state2.stop();
+                    e
+                })?;
             }
+            Ok(())
         });
 
         while state.running() {
-            for req in state.take_requests()? {
-                match req {
-                    GameRequest::AudioRequest(req) => audio_system.handle_request(&req)?,
-                    GameRequest::WindowRequest(req) => window_system.handle_request(&req)?,
-                    GameRequest::WorldRequest(_) => unreachable!(),
-                    GameRequest::Stop => state.stop(),
-                }
-            }
-            event_system.update(&state)?;
-            window_system.update(&state)?;
+            event_module.update(&state)?;
+            audio_module.update(&state)?;
+            window_module.update(&state)?;
         }
 
         world_thread
             .join()
-            .map_err(|_| "couldn't join world thread")?;
+            .map_err(|_| "couldn't join world thread")??;
         Ok(())
     }
 
@@ -106,8 +102,8 @@ impl Game {
         c.build().map_err(|e| e.to_string())
     }
 
-    pub fn accelerated(&mut self) -> &mut Self {
-        self.accelerated = true;
+    pub fn title(&mut self, title: &str) -> &mut Self {
+        self.title = Some(title.to_string());
         self
     }
 
@@ -116,8 +112,8 @@ impl Game {
         self
     }
 
-    pub fn title(&mut self, title: &str) -> &mut Self {
-        self.title = Some(title.to_string());
+    pub fn accelerated(&mut self) -> &mut Self {
+        self.accelerated = true;
         self
     }
 
@@ -125,11 +121,4 @@ impl Game {
         self.vsync = true;
         self
     }
-}
-
-#[macro_export]
-macro_rules! type_ids {
-    ($($t:ty),+) => {
-        &[$(TypeId::of::<$t>()),+]
-    };
 }

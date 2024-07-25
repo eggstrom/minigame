@@ -6,13 +6,13 @@ use sdl2::{
 
 use crate::SharedState;
 
-pub struct EventSystem {
+pub struct EventModule {
     event_pump: EventPump,
 }
 
-impl EventSystem {
+impl EventModule {
     pub fn new(event_pump: EventPump) -> Self {
-        EventSystem { event_pump }
+        EventModule { event_pump }
     }
 
     pub fn update(&mut self, state: &SharedState) -> Result<(), String> {

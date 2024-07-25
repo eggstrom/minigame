@@ -1,52 +1,45 @@
 use std::{
-    any::{type_name, TypeId},
+    any::{Any, TypeId},
+    cell::UnsafeCell,
     collections::HashMap,
-    mem, thread,
+    mem,
+    rc::Rc,
+    sync::Arc,
+    thread,
     time::{Duration, Instant},
 };
 
-use crate::SharedState;
+use crate::{DrawData, GameRequest, SharedState};
 
-pub struct World {
+pub struct WorldModule {
     ticks_per_second: u16,
     tick_instant: Instant,
-    next_entity: Entity,
-    entities: Vec<Entity>,
-    components: HashMap<TypeId, Vec<u8>>,
-    _component_lookup: HashMap<TypeId, Vec<Entity>>,
-    systems: HashMap<TypeId, Vec<fn()>>,
+    world: Rc<UnsafeCell<World>>,
 }
 
-impl World {
+impl<'a> WorldModule {
     pub fn new(ticks_per_second: u16) -> Self {
-        World {
+        WorldModule {
             ticks_per_second,
             tick_instant: Instant::now(),
-            next_entity: Entity::default(),
-            entities: vec![],
-            components: HashMap::new(),
-            _component_lookup: HashMap::new(),
-            systems: HashMap::new(),
+            world: Rc::new(UnsafeCell::new(World::new())),
         }
     }
 
-    pub fn update(&mut self, state: &SharedState) -> Result<(), String> {
+    pub fn start(&mut self, state: Arc<SharedState>, init: fn(&mut GameHandle)) {
+        init(&mut self.game_handle(state));
+    }
+
+    pub fn update(&mut self, state: Arc<SharedState>) -> Result<(), String> {
         // let instant = Instant::now();
 
-        // let mut draw_data = vec![];
-        // let mut requests = vec![];
-        //
-        // for entity in self.entities.iter_mut() {
-        //     let (dd, req) = entity.update();
-        //     dd.map(|mut dd| draw_data.append(&mut dd));
-        //     req.map(|mut req| requests.append(&mut req));
-        // }
-        //
-        // state.set_draw_data(draw_data)?;
-        // state.push_requests(&mut requests)?;
+        let game = self.game_handle(Arc::clone(&state));
+        let world = unsafe { &mut *self.world.get() };
+        world.update(game);
 
-        // log::info!("World update took {}us", instant.elapsed().as_micros());
+        // println!("World update took {}us", instant.elapsed().as_micros());
 
+        state.set_draw_data(mem::take(&mut world.draw_data))?;
         self.await_next_tick();
         Ok(())
     }
@@ -57,67 +50,161 @@ impl World {
         self.tick_instant = Instant::now();
     }
 
-    pub fn register_component<T: 'static>(&mut self) -> Result<(), String> {
-        self.components
-            .insert(TypeId::of::<T>(), vec![])
-            .map_or(Ok(()), |_| {
-                Err(format!("duplicate component: {}", type_name::<T>()))
-            })
-    }
-
-    pub fn unregister_component<T: 'static>(&mut self) -> Result<(), String> {
-        self.components
-            .remove(&TypeId::of::<T>())
-            .map_or(Ok(()), |_| {
-                Err(format!("unregistered component: {}", type_name::<T>()))
-            })
-    }
-
-    pub fn add_entity(&mut self) -> EntityHandle {
-        let entity = self.next_entity;
-        self.next_entity = entity.next();
-        self.entities.push(entity);
-        EntityHandle {
-            world: self,
-            entity,
+    fn game_handle(&'a self, state: Arc<SharedState>) -> GameHandle {
+        GameHandle {
+            world: Rc::clone(&self.world),
+            state,
         }
-    }
-
-    fn add_component<T: 'static>(&mut self, component: T) -> Result<(), String> {
-        let components = self
-            .components
-            .get_mut(&TypeId::of::<T>())
-            .ok_or(format!("unregistered component: {}", type_name::<T>()))?;
-        let transmuted = unsafe { mem::transmute::<&mut Vec<u8>, &mut Vec<T>>(components) };
-        transmuted.push(component);
-        Ok(())
-    }
-
-    pub fn add_system<T: 'static>(&mut self, system: fn()) -> Result<(), String> {
-        self.systems
-            .get_mut(&TypeId::of::<T>())
-            .ok_or(format!("unregistered component: {}", type_name::<T>()))?
-            .push(system);
-        Ok(())
-    }
-
-    pub fn get_components<T: 'static>(&self) -> Result<&[T], String> {
-        let components = self
-            .components
-            .get(&TypeId::of::<T>())
-            .ok_or(format!("unregistered component: {}", type_name::<T>()))?;
-
-        // Prevents a panic when there's no components
-        if components.is_empty() {
-            return Ok(&[]);
-        }
-
-        let transmuted = unsafe { mem::transmute::<&Vec<u8>, &Vec<T>>(components) };
-        Ok(transmuted.as_slice())
     }
 }
 
-#[derive(Clone, Copy)]
+pub struct World {
+    next_entity: Entity,
+    entities: Vec<Entity>,
+    storage: HashMap<TypeId, Box<dyn WorldStorageTrait>>,
+    draw_data: Vec<DrawData>,
+}
+
+impl<'a> World {
+    pub fn new() -> Self {
+        World {
+            next_entity: Entity::default(),
+            entities: vec![],
+            storage: HashMap::new(),
+            draw_data: vec![],
+        }
+    }
+
+    pub fn update(&mut self, mut game: GameHandle) {
+        for storage in self.storage.values_mut() {
+            storage.update(&mut game);
+        }
+    }
+
+    fn storage<C: 'static>(&mut self) -> &mut WorldStorage<C> {
+        let storage = self
+            .storage
+            .entry(TypeId::of::<C>())
+            .or_insert(Box::new(WorldStorage::<C>::new()));
+        let storage: &mut Box<dyn Any> = unsafe { mem::transmute(storage) };
+        storage.downcast_mut().unwrap()
+    }
+
+    pub fn add_entity(&mut self) -> Entity {
+        let entity = self.next_entity;
+        self.next_entity = entity.next();
+        self.entities.push(entity);
+        entity
+    }
+
+    pub fn add_system<C: 'static>(&mut self, system: fn(&mut GameHandle, Entity, &mut C)) {
+        self.storage::<C>().add_system(system);
+    }
+
+    pub fn add_component<C: 'static>(&mut self, entity: Entity, component: C) {
+        self.storage::<C>().add_component(entity, component);
+    }
+}
+
+pub struct WorldStorage<C> {
+    systems: Vec<fn(&mut GameHandle, Entity, &mut C)>,
+    components: Vec<C>,
+    entities: Vec<Entity>,
+}
+
+impl<C> WorldStorage<C> {
+    pub fn new() -> Self {
+        WorldStorage {
+            systems: vec![],
+            components: vec![],
+            entities: vec![],
+        }
+    }
+
+    pub fn add_system(&mut self, system: fn(&mut GameHandle, Entity, &mut C)) {
+        self.systems.push(system);
+    }
+
+    pub fn clear_systems(&mut self) {
+        self.systems.clear();
+    }
+
+    pub fn add_component(&mut self, entity: Entity, component: C) {
+        self.entities.push(entity);
+        self.components.push(component);
+    }
+
+    pub fn remove_component(&mut self, entity: Entity) {
+        if let Some(index) = self.entities.iter().position(|&e| e == entity) {
+            self.entities.swap_remove(index);
+            self.components.swap_remove(index);
+        }
+    }
+
+    pub fn clear_components(&mut self) {
+        self.entities.clear();
+        self.components.clear();
+    }
+}
+
+pub trait WorldStorageTrait: Any {
+    fn update(&mut self, game: &mut GameHandle);
+}
+
+impl<C: 'static> WorldStorageTrait for WorldStorage<C> {
+    fn update(&mut self, game: &mut GameHandle) {
+        let mut systems = mem::take(&mut self.systems);
+        let mut components = mem::take(&mut self.components);
+        let mut entities = mem::take(&mut self.entities);
+
+        for system in systems.iter() {
+            for (entity, component) in entities.iter().zip(components.iter_mut()) {
+                system(game, *entity, component);
+            }
+        }
+
+        self.systems = mem::take(&mut systems);
+        self.components = mem::take(&mut components);
+        self.entities = mem::take(&mut entities);
+    }
+}
+
+pub struct GameHandle {
+    world: Rc<UnsafeCell<World>>,
+    state: Arc<SharedState>,
+}
+
+impl GameHandle {
+    pub fn stop(&self) {
+        self.state.stop();
+    }
+
+    pub fn send<R: GameRequest>(&self, request: R) -> Result<(), String> {
+        request.send(&self.state)?;
+        Ok(())
+    }
+
+    pub fn draw(&mut self, data: DrawData) {
+        let world = unsafe { &mut *self.world.get() };
+        world.draw_data.push(data);
+    }
+
+    pub fn add_system<C: 'static>(&mut self, system: fn(&mut GameHandle, Entity, &mut C)) {
+        let world = unsafe { &mut *self.world.get() };
+        world.add_system(system);
+    }
+
+    pub fn add_entity(&mut self) -> EntityHandle {
+        let world = unsafe { &mut *self.world.get() };
+        let entity = world.add_entity();
+        EntityHandle {
+            world: Rc::clone(&self.world),
+            entity,
+        }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Entity(u64);
 
 impl Entity {
@@ -132,21 +219,19 @@ impl Default for Entity {
     }
 }
 
-pub struct EntityHandle<'a> {
-    world: &'a mut World,
+pub struct EntityHandle {
+    world: Rc<UnsafeCell<World>>,
     entity: Entity,
 }
 
-impl<'a> EntityHandle<'a> {
+impl EntityHandle {
     pub fn entity(&self) -> Entity {
         self.entity
     }
 
-    pub fn add_component<T: 'static>(
-        &mut self,
-        component: T,
-    ) -> Result<&'a mut EntityHandle, String> {
-        self.world.add_component(component)?;
-        Ok(self)
+    pub fn add_component<C: 'static>(&mut self, component: C) -> &mut Self {
+        let world = unsafe { &mut *self.world.get() };
+        world.add_component(self.entity, component);
+        self
     }
 }

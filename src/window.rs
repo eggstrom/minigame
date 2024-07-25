@@ -1,4 +1,4 @@
-use std::{collections::HashMap, rc::Rc};
+use std::{collections::HashMap, rc::Rc, time::Instant};
 
 use sdl2::{
     gfx::primitives::DrawRenderer,
@@ -10,19 +10,19 @@ use sdl2::{
 
 use crate::{DrawData, SharedState, WindowRequest};
 
-pub struct WindowSystem<'a> {
+pub struct WindowModule<'a> {
     canvas: WindowCanvas,
     texture_creator: &'a TextureCreator<WindowContext>,
     texture_cache: HashMap<&'a str, Rc<Texture<'a>>>,
     background_color: Color,
 }
 
-impl<'a> WindowSystem<'a> {
+impl<'a> WindowModule<'a> {
     pub fn new(
         canvas: WindowCanvas,
         texture_creator: &'a TextureCreator<WindowContext>,
     ) -> Result<Self, String> {
-        Ok(WindowSystem {
+        Ok(WindowModule {
             canvas,
             texture_creator,
             texture_cache: HashMap::new(),
@@ -31,6 +31,10 @@ impl<'a> WindowSystem<'a> {
     }
 
     pub fn update(&mut self, state: &SharedState) -> Result<(), String> {
+        for request in state.take_window_requests()? {
+            self.handle_request(&request)?;
+        }
+
         // let instant = Instant::now();
 
         if let Some(draw_data) = state.lock_draw_data()? {
@@ -42,13 +46,13 @@ impl<'a> WindowSystem<'a> {
             }
         }
 
-        // log::info!("Window update took {}us", instant.elapsed().as_micros());
+        // println!("Window update took {}us", instant.elapsed().as_micros());
 
         self.canvas.present();
         Ok(())
     }
 
-    pub fn handle_request(&mut self, request: &WindowRequest) -> Result<(), String> {
+    fn handle_request(&mut self, request: &WindowRequest) -> Result<(), String> {
         match request {
             WindowRequest::EnableFullscreen => self
                 .canvas
@@ -111,7 +115,7 @@ impl<'a> WindowSystem<'a> {
         Ok(())
     }
 
-    pub fn load_texture(&mut self, id: &'a str, path: &str) -> Result<(), String> {
+    fn load_texture(&mut self, id: &'a str, path: &str) -> Result<(), String> {
         if self.texture_cache.contains_key(id) {
             return Err(format!("texture already exists: {id}"));
         }
@@ -121,7 +125,7 @@ impl<'a> WindowSystem<'a> {
         Ok(())
     }
 
-    pub fn load_texture_bytes(&mut self, id: &'a str, bytes: &[u8]) -> Result<(), String> {
+    fn load_texture_bytes(&mut self, id: &'a str, bytes: &[u8]) -> Result<(), String> {
         if self.texture_cache.contains_key(id) {
             return Err(format!("texture already exists: {id}"));
         }
@@ -131,7 +135,7 @@ impl<'a> WindowSystem<'a> {
         Ok(())
     }
 
-    pub fn unload_texture(&mut self, id: &str) -> Result<(), String> {
+    fn unload_texture(&mut self, id: &str) -> Result<(), String> {
         match self.texture_cache.remove(id) {
             Some(_) => Ok(()),
             None => Err(format!("texture not found: {id}")),
